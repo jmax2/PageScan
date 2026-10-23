@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+from typing import Any
+
+from PIL import Image, ImageDraw
+
+
+def to_bbox(points: list[list[float]]) -> tuple[int, int, int, int]:
+    """Convert the OCR quadrilateral to a bounding box (x1, y1, x2, y2)."""
+    xs = [float(point[0]) for point in points]
+    ys = [float(point[1]) for point in points]
+    return (
+        int(min(xs)),
+        int(min(ys)),
+        int(max(xs)),
+        int(max(ys)),
+    )
+
+
+def normalize_detection(page_name: str, raw_detection: Any, min_confidence: float = 0.3) -> dict[str, Any] | None:
+    """Convert a raw EasyOCR result into a normalized dict with JSON-safe values."""
+    if not isinstance(raw_detection, (list, tuple)) or len(raw_detection) < 3:
+        return None
+
+    points, text, confidence = raw_detection[0], raw_detection[1], float(raw_detection[2])
+
+    if confidence < min_confidence:
+        return None
+
+    x1, y1, x2, y2 = to_bbox(points)
+    return {
+        "page": page_name,
+        "box": [x1, y1, x2, y2],
+        "text": str(text),
+        "confidence": round(float(confidence), 4),
+    }
+
+
+def read_text_regions(image: Image.Image, reader: Any, min_confidence: float = 0.3, page_name: str = "image") -> list[dict[str, Any]]:
+    """Run OCR on an image and normalize the results into a list of detections."""
+    raw_results = reader.readtext(image)
+    detections: list[dict[str, Any]] = []
+
+    for raw in raw_results:
+        item = normalize_detection(page_name, raw, min_confidence=min_confidence)
+        if item is not None:
+            detections.append(item)
+
+    return detections
+
+
+def draw_detection_boxes(image: Image.Image, detections: list[dict[str, Any]], color: str = "red") -> Image.Image:
+    """Return a copy of the image with detection boxes drawn on top."""
+    result = image.copy()
+    draw = ImageDraw.Draw(result)
+
+    for detection in detections:
+        box = detection.get("box")
+        if not isinstance(box, (list, tuple)) or len(box) != 4:
+            continue
+
+        x1, y1, x2, y2 = [int(value) for value in box]
+        confidence = float(detection.get("confidence", 0.0))
+        if confidence > 0.8:
+            pen_color = "#2ecc71"
+        elif confidence > 0.5:
+            pen_color = "#f1c40f"
+        else:
+            pen_color = "#e74c3c"
+
+        draw.rectangle([(x1, y1), (x2, y2)], outline=pen_color, width=2)
+
+    return result

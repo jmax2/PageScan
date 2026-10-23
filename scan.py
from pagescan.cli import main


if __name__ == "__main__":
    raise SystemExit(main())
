@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from easyocr import Reader
+
+from pagescan.detector import draw_detection_boxes, read_text_regions
+from pagescan.exporter import save_json, save_preview
+from pagescan.loader import load_image
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="PageScan: OCR a comic page and export structured results.")
+    parser.add_argument("image", help="Path to the image file to scan")
+    parser.add_argument("--min-confidence", type=float, default=0.3, help="Minimum OCR confidence to keep")
+    parser.add_argument("--output-dir", default="output", help="Folder where JSON and preview output are saved")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    image_path = Path(args.image)
+
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+
+    image = load_image(image_path)
+    reader = Reader(["en"])
+    detections = read_text_regions(
+        image=image,
+        reader=reader,
+        min_confidence=args.min_confidence,
+        page_name=image_path.name,
+    )
+
+    for item in detections:
+        print(f"{item['text']}  (confidence={item['confidence']})")
+
+    output_dir = Path(args.output_dir)
+    preview_path = output_dir / f"{image_path.stem}_boxes.png"
+    json_path = output_dir / f"{image_path.stem}.json"
+
+    preview = draw_detection_boxes(image, detections)
+    save_preview(preview, preview_path)
+    save_json(detections, json_path)
+
+    print(f"Saved preview: {preview_path}")
+    print(f"Saved JSON: {json_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
